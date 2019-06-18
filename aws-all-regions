@@ -1,0 +1,39 @@
+#!/bin/bash
+# runs a command in every AWS region.
+# Useful for find where something lives!
+set -euo pipefail
+
+trap "echo exiting!; exit 0" INT
+
+tempDir=`mktemp -d`
+
+[ "$#" == "0" ] && {
+  echo "[ERROR] you must pass at least one param"
+  echo "usage: $0 <command>"
+  echo "   eg: $0 cloudfront list-distributions \\
+        --query 'DistributionList.Items[*].[ARN]' \\
+        --output text"
+  echo "note: the command will be prefixed with 'aws --region <region>'"
+  exit 1
+}
+
+function doit {
+  region=$1
+  shift # pop the region param[
+  outFile="$tempDir/$region"
+  echo -e "Running command in region:'$region'..." > /dev/stderr
+  echo "#$region" > $outFile
+  aws --region $region $@ >> $outFile
+}
+
+# thanks https://stackoverflow.com/a/42087018/1410035
+for region in `aws ec2 describe-regions --region us-east-1 --output text | cut -f3`; do
+  doit $region $@ &
+done
+
+wait
+
+cat $tempDir/*
+[ -z "${DONT_CLEANUP:-}" ] \
+  && { rm -r $tempDir; } \
+  || { echo "Files are in $tempDir"; }
